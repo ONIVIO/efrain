@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visor de PDF - Decoding Anxiety</title>
+    
+    <!-- Tailwind CSS para el diseño -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- FontAwesome para los íconos -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- PDF.js core library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
+    <style>
+        /* Estilos personalizados adicionales */
+        body {
+            background-color: #f1f5f9; /* slate-100 */
+        }
+        
+        #pdf-render {
+            /* Sombra y bordes redondeados para simular una hoja de papel */
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+            border-radius: 4px;
+            max-width: 100%;
+            height: auto;
+            transition: opacity 0.2s ease-in-out;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f1f1; 
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #cbd5e1; 
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8; 
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col font-sans text-slate-800 h-screen overflow-hidden">
+
+    <!-- Barra de Herramientas Superior -->
+    <header class="bg-white shadow-sm border-b border-slate-200 p-3 sm:p-4 z-10 flex flex-col sm:flex-row justify-between items-center gap-4 flex-shrink-0">
+        
+        <!-- Título -->
+        <div class="flex items-center gap-3 w-full sm:w-auto justify-center sm:justify-start">
+            <i class="fa-solid fa-file-pdf text-red-500 text-2xl"></i>
+            <h1 class="text-lg font-semibold text-slate-700 truncate max-w-[200px] md:max-w-xs" title="Decoding_Anxiety.pdf">
+                Decoding_Anxiety.pdf
+            </h1>
+        </div>
+        
+        <!-- Controles de Paginación -->
+        <div class="flex items-center gap-2 bg-slate-100 p-1.5 rounded-lg border border-slate-200">
+            <button id="prev-page" class="w-8 h-8 flex items-center justify-center bg-white hover:bg-slate-50 text-slate-700 rounded shadow-sm border border-slate-200 transition disabled:opacity-50 disabled:cursor-not-allowed" title="Página anterior">
+                <i class="fas fa-chevron-left"></i>
+            </button>
+            
+            <div class="px-2 text-sm font-medium text-slate-600 min-w-[100px] text-center">
+                Pág. <span id="page-num" class="font-bold text-slate-800">0</span> de <span id="page-count">0</span>
+            </div>
+            
+            <button id="next-page" class="w-8 h-8 flex items-center justify-center bg-white hover:bg-slate-50 text-slate-700 rounded shadow-sm border border-slate-200 transition disabled:opacity-50 disabled:cursor-not-allowed" title="Página siguiente">
+                <i class="fas fa-chevron-right"></i>
+            </button>
+        </div>
+
+        <!-- Controles de Zoom -->
+        <div class="flex items-center gap-2 bg-slate-100 p-1.5 rounded-lg border border-slate-200 w-full sm:w-auto justify-center sm:justify-end">
+            <button id="zoom-out" class="w-8 h-8 flex items-center justify-center bg-white hover:bg-slate-50 text-slate-700 rounded shadow-sm border border-slate-200 transition disabled:opacity-50" title="Alejar">
+                <i class="fas fa-minus"></i>
+            </button>
+            
+            <span class="text-sm font-medium text-slate-600 w-12 text-center" id="zoom-val">100%</span>
+            
+            <button id="zoom-in" class="w-8 h-8 flex items-center justify-center bg-white hover:bg-slate-50 text-slate-700 rounded shadow-sm border border-slate-200 transition disabled:opacity-50" title="Acercar">
+                <i class="fas fa-plus"></i>
+            </button>
+            
+            <div class="w-px h-6 bg-slate-300 mx-1"></div>
+            
+            <a href="https://github.com/ONIVIO/efrain/blob/main/Decoding_Anxiety.pdf" target="_blank" class="w-8 h-8 flex items-center justify-center bg-white hover:bg-slate-50 text-blue-600 rounded shadow-sm border border-slate-200 transition" title="Ver en GitHub">
+                <i class="fab fa-github"></i>
+            </a>
+        </div>
+    </header>
+
+    <!-- Contenedor Principal del Documento -->
+    <main class="flex-grow flex justify-center p-4 sm:p-8 overflow-auto custom-scrollbar relative bg-slate-100">
+        
+        <!-- Indicador de Carga -->
+        <div id="loader" class="absolute top-1/3 left-1/2 transform -translate-x-1/2 flex flex-col items-center">
+            <i class="fas fa-circle-notch fa-spin text-5xl text-blue-500 mb-4"></i>
+            <p class="text-slate-600 font-medium text-lg">Cargando documento...</p>
+        </div>
+
+        <!-- Mensaje de Error (Oculto por defecto) -->
+        <div id="error-message" class="hidden absolute top-10 left-1/2 transform -translate-x-1/2 bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded shadow-md max-w-md w-full">
+            <div class="flex items-center mb-2">
+                <i class="fas fa-exclamation-triangle text-xl mr-2"></i>
+                <h3 class="font-bold">Error al cargar el PDF</h3>
+            </div>
+            <p id="error-text" class="text-sm">No se pudo cargar el documento desde la URL especificada.</p>
+        </div>
+
+        <!-- Canvas donde se dibuja la página del PDF -->
+        <canvas id="pdf-render" class="opacity-0"></canvas>
+    </main>
+
+    <script>
+        // --- Configuración Inicial ---
+        // Usamos la URL "raw" de GitHub para acceder directamente al archivo binario del PDF
+        const url = 'https://raw.githubusercontent.com/ONIVIO/efrain/main/Decoding_Anxiety.pdf';
+        
+        // Configurar la ruta del Worker de PDF.js (requerido para el rendimiento)
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        // --- Estado de la Aplicación ---
+        let pdfDoc = null,
+            pageNum = 1,
+            pageIsRendering = false,
+            pageNumIsPending = null,
+            scale = 1.2, // Escala inicial
+            canvas = document.querySelector('#pdf-render'),
+            ctx = canvas.getContext('2d');
+
+        // Referencias a elementos del DOM
+        const pageNumDisplay = document.querySelector('#page-num');
+        const pageCountDisplay = document.querySelector('#page-count');
+        const loader = document.querySelector('#loader');
+        const errorMsg = document.querySelector('#error-message');
+        const errorText = document.querySelector('#error-text');
+        const btnPrev = document.querySelector('#prev-page');
+        const btnNext = document.querySelector('#next-page');
+        const zoomValDisplay = document.querySelector('#zoom-val');
+
+        // --- Funciones Principales ---
+
+        /**
+         * Renderiza una página específica en el canvas
+         * @param {number} num - Número de página a renderizar
+         */
+        const renderPage = (num) => {
+            pageIsRendering = true;
+            canvas.style.opacity = '0.5'; // Efecto visual de carga de página
+
+            // Obtener la página del documento PDF
+            pdfDoc.getPage(num).then(page => {
+                // Calcular viewport con la escala actual
+                const viewport = page.getViewport({ scale });
+                
+                // Ajustar dimensiones del canvas para que coincidan con la página renderizada
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+
+                const renderCtx = {
+                    canvasContext: ctx,
+                    viewport: viewport
+                };
+
+                // Renderizar la página
+                page.render(renderCtx).promise.then(() => {
+                    pageIsRendering = false;
+                    canvas.style.opacity = '1'; // Restaurar opacidad al terminar
+                    canvas.classList.remove('hidden');
+
+                    // Si hay una página pendiente por renderizar, hacerlo ahora
+                    if (pageNumIsPending !== null) {
+                        renderPage(pageNumIsPending);
+                        pageNumIsPending = null;
+                    }
+                });
+
+                // Actualizar la página actual en la interfaz
+                pageNumDisplay.textContent = num;
+                updateButtons();
+            });
+        };
+
+        /**
+         * Pone en cola el renderizado de una página si ya hay una renderizándose
+         * @param {number} num - Número de página
+         */
+        const queueRenderPage = (num) => {
+            if (pageIsRendering) {
+                pageNumIsPending = num;
+            } else {
+                renderPage(num);
+            }
+        };
+
+        /**
+         * Actualiza el estado de los botones (deshabilitar si estamos en límites)
+         */
+        const updateButtons = () => {
+            btnPrev.disabled = pageNum <= 1;
+            btnNext.disabled = pageNum >= pdfDoc.numPages;
+            zoomValDisplay.textContent = Math.round(scale * 100) + '%';
+        };
+
+        /**
+         * Muestra la página anterior
+         */
+        const showPrevPage = () => {
+            if (pageNum <= 1) return;
+            pageNum--;
+            queueRenderPage(pageNum);
+        };
+
+        /**
+         * Muestra la página siguiente
+         */
+        const showNextPage = () => {
+            if (pageNum >= pdfDoc.numPages) return;
+            pageNum++;
+            queueRenderPage(pageNum);
+        };
+
+        /**
+         * Funciones de Zoom
+         */
+        const zoomIn = () => {
+            if (scale >= 3.0) return; // Límite máximo
+            scale += 0.2;
+            queueRenderPage(pageNum);
+        };
+
+        const zoomOut = () => {
+            if (scale <= 0.4) return; // Límite mínimo
+            scale -= 0.2;
+            queueRenderPage(pageNum);
+        };
+
+        // --- Carga del Documento ---
+        
+        // Ocultar canvas inicialmente
+        canvas.classList.add('hidden');
+
+        // Obtener el documento asincrónicamente
+        pdfjsLib.getDocument(url).promise.then(pdfDoc_ => {
+            pdfDoc = pdfDoc_;
+            
+            // Ocultar el indicador de carga
+            loader.classList.add('hidden');
+            
+            // Mostrar la cantidad total de páginas
+            pageCountDisplay.textContent = pdfDoc.numPages;
+
+            // Renderizar la primera página
+            renderPage(pageNum);
+            
+        }).catch(err => {
+            // Manejo de errores (CORS, archivo no encontrado, etc.)
+            loader.classList.add('hidden');
+            errorMsg.classList.remove('hidden');
+            errorText.textContent = `Error: ${err.message}. Asegúrate de que la URL sea válida y permita acceso público (CORS).`;
+            console.error("Error cargando PDF:", err);
+        });
+
+        // --- Event Listeners ---
+        document.querySelector('#prev-page').addEventListener('click', showPrevPage);
+        document.querySelector('#next-page').addEventListener('click', showNextPage);
+        document.querySelector('#zoom-in').addEventListener('click', zoomIn);
+        document.querySelector('#zoom-out').addEventListener('click', zoomOut);
+
+        // Atajos de teclado para facilitar la navegación
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowLeft') showPrevPage();
+            if (e.key === 'ArrowRight') showNextPage();
+        });
+
+    </script>
+</body>
+</html>
